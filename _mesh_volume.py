@@ -124,15 +124,22 @@ def _cell_averaging_vol(points, cells):
     return new_positions
 
 
-def _format_volume_mesh_for_render(grid):
-    # Shrink filter to visualize internal structure
-    shrunk_grid = grid.shrink(shrink_factor=0.8)
-    surface = shrunk_grid.extract_surface()
+def _format_volume_mesh_for_render(grid, mode='surface'):
+    """
+    mode='volume': 내부 구조 확인용 (Shrink 적용, 틈이 보임)
+    mode='surface': 외형 확인용 (Shrink 없음, 매끈한 표면)
+    """
+    if mode == 'volume':
+        # 내부를 보기 위해 셀을 수축시킴 (기존 방식)
+        processed_grid = grid.shrink(shrink_factor=0.8)
+        surface = processed_grid.extract_surface()
+    else:
+        # 표면만 추출 (Catmull-Clark 같은 부드러운 외형 확인용)
+        surface = grid.extract_surface()
     
-    # Compute normals
+    # 법선 계산 및 삼각형 변환
     surface = surface.compute_normals(auto_orient_normals=True, consistent_normals=True, inplace=False)
     
-    # [수정됨] PyVista 최신 버전 대응: n_faces 대신 n_cells 사용
     if surface.n_cells == 0:
         return np.array([], dtype=np.float32)
         
@@ -169,7 +176,10 @@ def subdivided_volume_grid(level: int) -> np.ndarray:
     cell_type = np.full(len(current_cells) // 9, pv.CellType.HEXAHEDRON, dtype=np.uint8)
     grid = pv.UnstructuredGrid(current_cells, cell_type, current_pts)
     
-    return _format_volume_mesh_for_render(grid)
+    # [변경점] 여기서 모드를 선택하세요.
+    # 'volume': 질문하신 이미지처럼 보임 (내부 쪼개짐 확인)
+    # 'surface': 매끈하게 연결된 덩어리로 보임 (둥근 정도 확인 가능)
+    return _format_volume_mesh_for_render(grid, mode='volume')
 
 # --- 아래 부분이 기존 _mesh.py 와 호환성을 위해 추가된 부분입니다 ---
 
