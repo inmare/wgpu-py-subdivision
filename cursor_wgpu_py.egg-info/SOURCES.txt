@@ -1,0 +1,9 @@
+README.md
+cube.py
+pyproject.toml
+triangle.py
+cursor_wgpu_py.egg-info/PKG-INFO
+cursor_wgpu_py.egg-info/SOURCES.txt
+cursor_wgpu_py.egg-info/dependency_links.txt
+cursor_wgpu_py.egg-info/requires.txt
+cursor_wgpu_py.egg-info/top_level.txt

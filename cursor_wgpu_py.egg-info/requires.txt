@@ -1,0 +1,3 @@
+wgpu[glfw]==0.18.*
+numpy>=1.26
+pyvista>=0.46

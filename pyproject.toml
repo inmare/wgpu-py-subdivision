@@ -1,0 +1,22 @@
+[project]
+name = "cursor-wgpu-py"
+version = "0.1.0"
+description = "wgpu-py WebGPU triangle demo (uv)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "wgpu[glfw]==0.18.*",
+    "numpy>=1.26",
+    "pyvista>=0.46",
+]
+
+[tool.setuptools]
+py-modules = ["triangle", "cube"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+preview = true
+

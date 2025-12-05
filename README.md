@@ -1,0 +1,42 @@
+# wgpu-py 삼각형 데모
+
+`uv`로 가상환경을 만들고, `wgpu-py`를 사용해 WebGPU 삼각형을 렌더링하는 최소 예제입니다. Windows에서 동작하도록 Rust 백엔드(`wgpu.backends.rs`)와 `glfw` 창 백엔드를 사용합니다.
+
+## 사전 준비
+
+- Python 3.10 이상
+- [uv](https://github.com/astral-sh/uv) 설치
+- GPU 드라이버가 최신 버전인지 확인 (DX12/Vulkan 지원)
+
+## 설치와 실행
+
+```powershell
+# 가상환경 생성
+uv venv
+
+# 의존성 설치
+uv pip install -e .
+# 또는 pyproject를 읽지 않고 바로 추가하려면 (numpy 포함)
+# uv add "wgpu[glfw]==0.18.*" "numpy>=1.26"
+
+# 삼각형 예제 실행
+uv run python triangle.py
+
+# 회전 큐브 + Phong 셰이딩 실행
+uv run python cube.py
+```
+
+첫 실행 시 glfw 백엔드가 기본으로 선택됩니다. 다른 GUI 백엔드(PySide/PyQt 등)를 쓰고 싶다면 해당 백엔드를 설치하거나 `WGPU_GUI_BACKEND` 환경변수를 설정할 수 있습니다.
+
+## 파일 설명
+
+- `triangle.py`: 윈도우를 띄워 삼각형을 렌더링하는 메인 스크립트.
+- `cube.py`: 회전하는 큐브를 Phong 셰이딩으로 렌더링하는 예제.
+- `pyproject.toml`: uv/PEP 621 메타데이터와 의존성 정의.
+
+## 문제 해결
+
+- **창이 바로 닫힘**: GPU 드라이버 업데이트 또는 다른 전원 모드에서 시도.
+- **어댑터를 못 찾음**: 외장 GPU가 비활성화되지 않았는지 확인(노트북은 고성능 모드).
+- **백엔드 충돌**: `pip uninstall glfw` 후 `pip install glfw==2.7.*` 같이 재설치하거나, 다른 GUI 백엔드를 설치해 `WGPU_GUI_BACKEND`로 명시.
+
