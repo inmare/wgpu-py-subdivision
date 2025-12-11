@@ -415,7 +415,8 @@ def subdivide_from_surface(
 # 렌더링용 변환 함수
 def format_for_render(
     mesh: pv.UnstructuredGrid,
-    mode: str = 'surface'
+    mode: str = 'surface',
+    shrink_factor: float = 1.0
 ) -> np.ndarray:
     """
     UnstructuredGrid를 WebGPU 렌더링용 flat numpy 배열로 변환
@@ -427,19 +428,24 @@ def format_for_render(
     mode : str
         'surface': 외부 표면만 (부드러운 외형)
         'volume': 셀을 수축하여 내부 구조 표시
+    shrink_factor : float
+        셀 수축 비율 (1.0 = 수축 없음, 0.8 = 20% 수축)
     
     Returns
     -------
     np.ndarray
         [pos.x, pos.y, pos.z, norm.x, norm.y, norm.z, ...] 형식의 배열
     """
-    if mode == 'volume':
-        # 내부 구조 확인용 (셀 수축)
+    # 셀 수축 적용
+    if shrink_factor < 1.0:
+        processed = mesh.shrink(shrink_factor=shrink_factor)
+    elif mode == 'volume':
         processed = mesh.shrink(shrink_factor=0.8)
-        surface = processed.extract_surface()
     else:
-        # 표면만 추출
-        surface = mesh.extract_surface()
+        processed = mesh
+    
+    # 표면 추출
+    surface = processed.extract_surface()
     
     # 법선 계산 및 삼각형화
     surface = surface.compute_normals(
@@ -463,6 +469,81 @@ def format_for_render(
             out.extend([*pts[idx], *normals[idx]])
     
     return np.array(out, dtype=np.float32)
+
+
+def extract_quad_edges(mesh: pv.UnstructuredGrid, shrink_factor: float = 1.0) -> np.ndarray:
+    """
+    Hexahedral 메쉬에서 Quad 면의 엣지만 추출 (삼각형 엣지 제외)
+    
+    Parameters
+    ----------
+    mesh : pv.UnstructuredGrid
+        입력 Hexahedral 메쉬
+    shrink_factor : float
+        셀 수축 비율 (1.0 = 수축 없음)
+    
+    Returns
+    -------
+    np.ndarray
+        [x1, y1, z1, x2, y2, z2, ...] 형식의 라인 세그먼트 배열
+    """
+    # 셀 수축 적용
+    if shrink_factor < 1.0:
+        mesh = mesh.shrink(shrink_factor=shrink_factor)
+    
+    # 표면 추출 (Quad 면들)
+    surface = mesh.extract_surface()
+    
+    points = surface.points.astype(np.float32)
+    
+    # Quad 엣지 추출 (중복 제거)
+    edges_set = set()
+    edges_list = []
+    
+    # PyVista의 faces 배열 사용 (PolyData에서는 faces, UnstructuredGrid에서는 cell connectivity)
+    if hasattr(surface, 'faces') and surface.faces is not None:
+        # PolyData - faces 배열 직접 사용
+        faces_arr = surface.faces
+        idx = 0
+        while idx < len(faces_arr):
+            n_pts = faces_arr[idx]
+            cell_pts = faces_arr[idx + 1: idx + 1 + n_pts]
+            
+            # 이 면의 엣지들 (순환)
+            for j in range(n_pts):
+                v0 = cell_pts[j]
+                v1 = cell_pts[(j + 1) % n_pts]
+                
+                # 중복 방지를 위해 정렬된 튜플 사용
+                edge = tuple(sorted([v0, v1]))
+                if edge not in edges_set:
+                    edges_set.add(edge)
+                    edges_list.append((v0, v1))
+            
+            idx += n_pts + 1
+    else:
+        # UnstructuredGrid - cell iterator 사용
+        for i in range(surface.n_cells):
+            cell = surface.get_cell(i)
+            cell_pts = cell.point_ids
+            n_pts = len(cell_pts)
+            
+            for j in range(n_pts):
+                v0 = cell_pts[j]
+                v1 = cell_pts[(j + 1) % n_pts]
+                
+                edge = tuple(sorted([v0, v1]))
+                if edge not in edges_set:
+                    edges_set.add(edge)
+                    edges_list.append((v0, v1))
+    
+    # 라인 세그먼트 배열 생성
+    out = []
+    for v0, v1 in edges_list:
+        out.extend([*points[v0], *points[v1]])
+    
+    return np.array(out, dtype=np.float32)
+
 
 
 if __name__ == "__main__":

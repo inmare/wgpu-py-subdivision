@@ -34,6 +34,7 @@ from _mesh_loader import (
 from _mlca import (
     MLCASubdivision,
     format_for_render,
+    extract_quad_edges,
 )
 from _math import perspective, look_at, rotation_x, rotation_y, translate
 
@@ -85,7 +86,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 }
 """
 
-# WebGPU 셰이더 (Wireframe)
+# WebGPU 셰이더 (Wireframe - position only)
 WIREFRAME_SHADER_SOURCE = """
 struct VertexOut {
     @builtin(position) pos : vec4<f32>,
@@ -104,7 +105,7 @@ struct SceneUniforms {
 @group(0) @binding(0) var<uniform> u_scene : SceneUniforms;
 
 @vertex
-fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>) -> VertexOut {
+fn vs_main(@location(0) position: vec3<f32>) -> VertexOut {
     var out : VertexOut;
     let world = u_scene.model * vec4<f32>(position, 1.0);
     out.pos = u_scene.view_proj * world;
@@ -113,13 +114,13 @@ fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>) -> 
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);  // 검은색 와이어프레임
+    return vec4<f32>(0.1, 0.1, 0.15, 1.0);  // 어두운 회색 와이어프레임
 }
 """
 
 
 def create_wireframe_indices(num_vertices: int) -> np.ndarray:
-    """삼각형 리스트에서 와이어프레임 인덱스 생성"""
+    """삼각형 리스트에서 와이어프레임 인덱스 생성 (legacy - 더 이상 사용하지 않음)"""
     num_triangles = num_vertices // 3
     indices = []
     for i in range(num_triangles):
@@ -139,7 +140,8 @@ class MultiLevelRenderer:
         Parameters
         ----------
         meshes_data : list
-            각 레벨의 vertex_data를 담은 리스트 [(level, vertex_data), ...]
+            각 레벨의 vertex_data와 edge_data를 담은 리스트 
+            [(level, vertex_data, edge_data), ...]
         """
         self.device = device
         self.texture_format = texture_format
@@ -159,16 +161,16 @@ class MultiLevelRenderer:
         self.meshes = []
         usage = wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST
         
-        for level, vertex_data in meshes_data:
+        for level, vertex_data, edge_data in meshes_data:
             vertex_buffer = device.create_buffer_with_data(
                 data=vertex_data.tobytes(),
                 usage=wgpu.BufferUsage.VERTEX
             )
             
-            wire_indices = create_wireframe_indices(len(vertex_data) // 6)
-            wire_index_buffer = device.create_buffer_with_data(
-                data=wire_indices.tobytes(),
-                usage=wgpu.BufferUsage.INDEX
+            # Quad 엣지용 버퍼 (position only, 3 floats per vertex)
+            edge_buffer = device.create_buffer_with_data(
+                data=edge_data.tobytes(),
+                usage=wgpu.BufferUsage.VERTEX
             )
             
             uniform_buffer = device.create_buffer(size=self.UNIFORM_BYTE_SIZE, usage=usage)
@@ -185,9 +187,9 @@ class MultiLevelRenderer:
                 "level": level,
                 "vertex_data": vertex_data,
                 "vertex_buffer": vertex_buffer,
-                "wire_indices": wire_indices,
-                "wire_indices_len": len(wire_indices),
-                "wire_index_buffer": wire_index_buffer,
+                "edge_data": edge_data,
+                "edge_buffer": edge_buffer,
+                "edge_vertex_count": len(edge_data) // 3,  # 3 floats per vertex
                 "uniform_buffer": uniform_buffer,
                 "bind_group": bind_group,
             })
@@ -241,7 +243,17 @@ class MultiLevelRenderer:
         shader = self.device.create_shader_module(code=WIREFRAME_SHADER_SOURCE)
         return self.device.create_render_pipeline(
             layout=self.device.create_pipeline_layout(bind_group_layouts=[self.bgl]),
-            vertex=self._create_vertex_state(shader),
+            vertex={
+                "module": shader,
+                "entry_point": "vs_main",
+                "buffers": [{
+                    "array_stride": 3 * 4,  # position only (vec3)
+                    "attributes": [
+                        {"format": wgpu.VertexFormat.float32x3, "offset": 0, "shader_location": 0},
+                    ],
+                    "step_mode": wgpu.VertexStepMode.vertex,
+                }]
+            },
             primitive={
                 "topology": wgpu.PrimitiveTopology.line_list,
                 "front_face": wgpu.FrontFace.ccw,
@@ -363,17 +375,11 @@ class MultiLevelRenderer:
             n_vertices = len(mesh_info["vertex_data"]) // 6
             render_pass.draw(n_vertices, 1, 0, 0)
             
-            # Wireframe 렌더링
+            # Quad Wireframe 렌더링 (별도 edge 버퍼 사용)
             render_pass.set_pipeline(self.wireframe_pipeline)
             render_pass.set_bind_group(0, mesh_info["bind_group"], [], 0, 999_999)
-            render_pass.set_vertex_buffer(0, mesh_info["vertex_buffer"], 0, mesh_info["vertex_buffer"].size)
-            render_pass.set_index_buffer(
-                mesh_info["wire_index_buffer"],
-                wgpu.IndexFormat.uint32,
-                0,
-                mesh_info["wire_index_buffer"].size
-            )
-            render_pass.draw_indexed(mesh_info["wire_indices_len"], 1, 0, 0, 0)
+            render_pass.set_vertex_buffer(0, mesh_info["edge_buffer"], 0, mesh_info["edge_buffer"].size)
+            render_pass.draw(mesh_info["edge_vertex_count"], 1, 0, 0)
         
         render_pass.end()
         self.device.queue.submit([encoder.finish()])
@@ -390,6 +396,8 @@ def main():
                         help='복셀화 해상도 (표면 메쉬인 경우)')
     parser.add_argument('--mode', type=str, default='surface', choices=['surface', 'volume'],
                         help='렌더링 모드 (surface: 외형, volume: 내부 구조)')
+    parser.add_argument('--shrink', type=float, default=1.0,
+                        help='셀 수축 비율 (0.8 = 20%% 수축, 각 셀 사이에 틈 생성)')
     parser.add_argument('--info', action='store_true',
                         help='메쉬 정보만 출력하고 종료')
     parser.add_argument('--max-level', type=int, default=3,
@@ -439,6 +447,8 @@ def main():
     
     # 3. 각 레벨별 MLCA 서브디비전 적용
     print(f"\n[3] MLCA 서브디비전 적용 (Level 0~{args.max_level})")
+    if args.shrink < 1.0:
+        print(f"    셀 수축: {args.shrink:.0%}")
     
     mlca = MLCASubdivision(verbose=False)
     meshes_data = []
@@ -466,11 +476,14 @@ def main():
             scale = 1.8 / max_dim  # 약간 작게 해서 겹치지 않도록
             subdivided_mesh.scale([scale, scale, scale], inplace=True)
         
-        # 렌더링 데이터 생성
-        vertex_data = format_for_render(subdivided_mesh, mode=args.mode)
-        meshes_data.append((level, vertex_data))
+        # 렌더링 데이터 생성 (shrink factor 적용)
+        shrink = args.shrink if args.shrink < 1.0 else (0.8 if args.mode == 'volume' else 1.0)
+        vertex_data = format_for_render(subdivided_mesh, mode=args.mode, shrink_factor=shrink)
+        edge_data = extract_quad_edges(subdivided_mesh, shrink_factor=shrink)
+        meshes_data.append((level, vertex_data, edge_data))
         
-        print(f"완료 ({len(vertex_data) // 6} 정점)")
+        n_edges = len(edge_data) // 6  # 2 vertices per edge, 3 floats per vertex
+        print(f"완료 ({len(vertex_data) // 6} 정점, {n_edges} 엣지)")
     
     # 4. WebGPU 렌더링
     print(f"\n[4] WebGPU 렌더링 시작")
