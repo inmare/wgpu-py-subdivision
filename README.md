@@ -32,16 +32,21 @@ uv run python general_mesh_demo.py --file meshes/pentagonal_prism.vtk
 uv run python general_mesh_demo.py --file meshes/hexagonal_prism.vtk
 uv run python general_mesh_demo.py --file meshes/full_cylinder.vtk
 
-# 4. PyVista 예제 모델 사용 (표면→볼륨 변환 후 MLCA 적용)
+# 4. 셀 수축 옵션 (서브디비전 구조 확인용)
+uv run python general_mesh_demo.py --file meshes/box.vtk --shrink 0.85
+uv run python general_mesh_demo.py --file meshes/hexagonal_prism.vtk --shrink 0.8
+
+# 5. PyVista 예제 모델 사용 (표면→볼륨 변환 후 MLCA 적용)
 uv run python general_mesh_demo.py --model bunny --resolution 15
 uv run python general_mesh_demo.py --model cow --resolution 12
 
-# 5. 옵션 설명
+# 6. 옵션 설명
 #   --file <path>       : VTK 파일 경로
 #   --model <name>      : PyVista 예제 모델 (bunny, cow, dragon, sphere, cube 등)
 #   --resolution <n>    : 복셀화 해상도 (표면 메쉬인 경우, 기본값 8)
 #   --max-level <n>     : 최대 세분화 레벨 (0~3, 기본값 3)
 #   --mode <mode>       : 렌더링 모드 (surface/volume)
+#   --shrink <factor>   : 셀 수축 비율 (0.8 = 20% 수축, 셀 사이에 틈 생성)
 #   --info              : 메쉬 정보만 출력하고 종료
 ```
 
@@ -312,7 +317,10 @@ uv run python general_mesh_demo.py --file meshes/pentagonal_prism.vtk
 uv run python general_mesh_demo.py --model bunny --resolution 15
 uv run python general_mesh_demo.py --model cow --resolution 12
 
-# 내부 구조 보기 (셀 수축)
+# 셀 수축으로 내부 구조 시각화
+uv run python general_mesh_demo.py --file meshes/quarter_cylinder.vtk --shrink 0.85
+
+# 내부 구조 보기 (볼륨 모드)
 uv run python general_mesh_demo.py --file meshes/quarter_cylinder.vtk --mode volume
 
 # 메쉬 정보만 확인
